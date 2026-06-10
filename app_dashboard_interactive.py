@@ -173,19 +173,36 @@ def kpi_card(title, value, subtitle, color):
 
 
 app = Dash(__name__)
-app.title = "Redes Sociais e Bem-estar"
+app.title = "Dashboard Interativo"
 
 app.layout = html.Div(
     children=[
         html.Div(
             children=[
+                html.P(
+                    "DASHBOARD INTERATIVO",
+                    style={
+                        "margin": "0 0 6px",
+                        "fontWeight": "bold",
+                        "letterSpacing": "1.5px",
+                        "color": COLORS["primary"],
+                    },
+                ),
                 html.H1(
-                    "Redes Sociais e Saúde Mental",
+                    "Geração Z em Rede: Uso Digital, Comportamento e Saúde Mental",
                     style={"margin": "0", "fontSize": "34px"},
                 ),
                 html.P(
-                    "Análise integrada de uso de redes sociais, comportamento adolescente e tendências de saúde mental.",
-                    style={"marginTop": "8px", "color": COLORS["muted"], "fontSize": "16px"},
+                    (
+                        "Uma leitura integrada de como os hábitos digitais se relacionam "
+                        "com o bem-estar, a saúde mental e o comportamento adolescente, "
+                        "revelando padrões, diferenças e conexões entre os dados."
+                    ),
+                    style={
+                        "margin": "9px 0 0",
+                        "color": COLORS["muted"],
+                        "fontSize": "16px",
+                    },
                 ),
             ],
             style={"marginBottom": "22px"},

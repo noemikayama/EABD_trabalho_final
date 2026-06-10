@@ -337,25 +337,36 @@ fig_normalized_boxplots.update_xaxes(tickangle=-25)
 fig_normalized_boxplots = style_fig(fig_normalized_boxplots)
 
 app = Dash(__name__)
-app.title = "Panorama da Geração Z: Redes Sociais, Saúde Mental e Comportamento"
+app.title = "Dashboard de Insights"
 
 app.layout = html.Div(
     children=[
         html.Div(
             children=[
-                html.P("DASHBOARD DE INSIGHTS", style={"margin": "0 0 6px", "fontWeight": "bold", "letterSpacing": "1.5px", "color": COLORS["primary"]}),
+                html.P(
+                    "DASHBOARD DE INSIGHTS",
+                    style={
+                        "margin": "0 0 6px",
+                        "fontWeight": "bold",
+                        "letterSpacing": "1.5px",
+                        "color": COLORS["primary"],
+                    },
+                ),
                 html.H1(
-                    "Panorama da Geração Z: Redes Sociais, Saúde Mental e Comportamento",
+                    "Geração Z em Rede: Uso Digital, Comportamento e Saúde Mental",
                     style={"margin": "0", "fontSize": "34px"},
                 ),
                 html.P(
                     (
-                        "Uma visão integrada da distribuição da saúde mental, das "
-                        "correlações com o uso de redes sociais, dos níveis de "
-                        "dependência e dos indicadores normalizados de saúde e "
-                        "comportamento adolescente."
+                        "Uma leitura integrada de como os hábitos digitais se relacionam "
+                        "com o bem-estar, a saúde mental e o comportamento adolescente, "
+                        "revelando padrões, diferenças e conexões entre os dados."
                     ),
-                    style={"margin": "9px 0 0", "color": COLORS["muted"], "fontSize": "16px"},
+                    style={
+                        "margin": "9px 0 0",
+                        "color": COLORS["muted"],
+                        "fontSize": "16px",
+                    },
                 ),
             ],
             style={"marginBottom": "22px"},
@@ -464,9 +475,10 @@ app.index_string = f"""
                 display: grid;
                 grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 14px;
+                margin-bottom: 18px;
             }}
             .dependency-grid {{
-                margin-top: 18px;
+                margin-top: 0;
             }}
             .normalized-boxplots-chart {{
                 margin-top: 18px;
