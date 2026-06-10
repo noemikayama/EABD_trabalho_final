@@ -13,8 +13,8 @@ TEEN_PATH = BASE_DIR / "teen_behavior_patterns.csv"
 MENTAL_PATH = BASE_DIR / "mental_health_trends.csv"
 
 genz = pd.read_csv(GENZ_PATH)
-teen = pd.read_csv(TEEN_PATH) if TEEN_PATH.exists() else pd.DataFrame()
-mental = pd.read_csv(MENTAL_PATH) if MENTAL_PATH.exists() else pd.DataFrame()
+teen = pd.read_csv(TEEN_PATH)
+mental = pd.read_csv(MENTAL_PATH)
 genz["addiction_level_num"] = genz["addiction_level"].map(
     {"Low": 1, "Medium": 2, "High": 3}
 )
@@ -143,8 +143,6 @@ teen_normalized_columns = [
 ]
 normalized_teen = (
     normalize_min_max(teen, teen_normalized_columns)
-    if not teen.empty
-    else pd.DataFrame()
 )
 
 mental_normalized_columns = [
@@ -156,8 +154,6 @@ mental_normalized_columns = [
 ]
 normalized_mental = (
     normalize_min_max(mental, mental_normalized_columns)
-    if not mental.empty
-    else pd.DataFrame()
 )
 
 corr = normalized_genz.corr(numeric_only=True)
@@ -255,6 +251,30 @@ fig_addiction.update_layout(
     showlegend=False,
 )
 fig_addiction = style_fig(fig_addiction)
+
+usage_counts, usage_bins = np.histogram(
+    genz["daily_usage_hours"],
+    bins=30,
+)
+fig_usage_histogram = go.Figure(
+    go.Bar(
+        x=(usage_bins[:-1] + usage_bins[1:]) / 2,
+        y=usage_counts,
+        width=np.diff(usage_bins),
+        marker_color=COLORS["secondary"],
+        hovertemplate=(
+            "Uso diário: %{x:.2f} h<br>"
+            "Participantes: %{y:,}<extra></extra>"
+        ),
+    )
+)
+fig_usage_histogram.update_layout(
+    title="Distribuição das horas de uso diário",
+    xaxis_title="Uso diário (horas)",
+    yaxis_title="Número de participantes",
+    bargap=0.04,
+)
+fig_usage_histogram = style_fig(fig_usage_histogram)
 
 normalized_indicator_labels = {
     "anxiety_score": "Ansiedade",
@@ -390,8 +410,17 @@ app.layout = html.Div(
             className="insight-grid",
         ),
         html.Div(
-            dcc.Graph(figure=fig_addiction),
-            className="chart-card addiction-chart",
+            children=[
+                html.Div(
+                    dcc.Graph(figure=fig_addiction),
+                    className="chart-card",
+                ),
+                html.Div(
+                    dcc.Graph(figure=fig_usage_histogram),
+                    className="chart-card",
+                ),
+            ],
+            className="graphs-grid dependency-grid",
         ),
         html.Div(
             dcc.Graph(figure=fig_normalized_boxplots),
@@ -436,7 +465,7 @@ app.index_string = f"""
                 grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 14px;
             }}
-            .addiction-chart {{
+            .dependency-grid {{
                 margin-top: 18px;
             }}
             .normalized-boxplots-chart {{

@@ -13,9 +13,8 @@ TEEN_PATH = BASE_DIR / "teen_behavior_patterns.csv"
 MENTAL_PATH = BASE_DIR / "mental_health_trends.csv"
 
 genz = pd.read_csv(GENZ_PATH)
-teen = pd.read_csv(TEEN_PATH) if TEEN_PATH.exists() else pd.DataFrame()
-mental = pd.read_csv(MENTAL_PATH) if MENTAL_PATH.exists() else pd.DataFrame()
-
+teen = pd.read_csv(TEEN_PATH)
+mental = pd.read_csv(MENTAL_PATH)
 genz["night_usage_label"] = np.where(
     genz["night_usage"] == 1,
     "Usa à noite",
@@ -26,10 +25,9 @@ genz_sample = genz.sample(n=min(35000, len(genz)), random_state=42)
 genz["addiction_level_num"] = genz["addiction_level"].map(
     {"Low": 1, "Medium": 2, "High": 3}
 )
-if not mental.empty:
-    mental["mental_health_risk_num"] = mental["mental_health_risk"].map(
-        {"Low": 1, "Medium": 2, "High": 3}
-    )
+mental["mental_health_risk_num"] = mental["mental_health_risk"].map(
+    {"Low": 1, "Medium": 2, "High": 3}
+)
 
 COLORS = {
     "background": "#F6F8FB",
@@ -69,7 +67,7 @@ TRANSLATIONS = {
 
 
 def options_from(series):
-    values = sorted(series.dropna().unique())
+    values = sorted(series.unique())
     return [
         {"label": TRANSLATIONS.get(value, str(value)), "value": value}
         for value in values
@@ -82,8 +80,6 @@ def filter_genz(countries, genders, platforms, source=None):
         filtered = filtered[filtered["country"].isin(countries)]
     if genders:
         filtered = filtered[filtered["gender"].isin(genders)]
-    if platforms:
-        filtered = filtered[filtered["primary_platform"].isin(platforms)]
     return filtered
 
 
@@ -95,8 +91,6 @@ def filter_teen(countries, genders, platforms):
         filtered = filtered[filtered["country"].isin(countries)]
     if genders:
         filtered = filtered[filtered["gender"].isin(genders)]
-    if platforms:
-        filtered = filtered[filtered["platform"].isin(platforms)]
     return filtered
 
 
@@ -261,7 +255,7 @@ app.layout = html.Div(
             children=[
                 html.Div(dcc.Graph(id="scatter-usage-mental"), className="chart-card"),
                 html.Div(dcc.Graph(id="usage-addiction"), className="chart-card"),
-                html.Div(dcc.Graph(id="pie-night-usage"), className="chart-card"),
+                html.Div(dcc.Graph(id="night-academic"), className="chart-card"),
                 html.Div(dcc.Graph(id="strong-correlations"), className="chart-card"),
                 html.Div(dcc.Graph(id="suicide-risk-platform"), className="chart-card"),
                 html.Div(dcc.Graph(id="usage-addiction-mental"), className="chart-card"),
@@ -330,7 +324,7 @@ app.index_string = f"""
     Output("insight-box", "children"),
     Output("scatter-usage-mental", "figure"),
     Output("usage-addiction", "figure"),
-    Output("pie-night-usage", "figure"),
+    Output("night-academic", "figure"),
     Output("strong-correlations", "figure"),
     Output("suicide-risk-platform", "figure"),
     Output("usage-addiction-mental", "figure"),
@@ -440,28 +434,114 @@ def update_dashboard(countries, genders):
     )
     fig_addiction = style_fig(fig_addiction)
 
-    night_data = (
-        filtered["night_usage_label"]
-        .value_counts()
-        .rename_axis("uso_noturno")
-        .reset_index(name="registros")
-    )
-    fig_pie = px.pie(
-        night_data,
-        names="uso_noturno",
-        values="registros",
-        color="uso_noturno",
-        color_discrete_map={
-            "Usa à noite": COLORS["accent"],
-            "Não usa à noite": COLORS["secondary"],
-        },
-        title="Uso de redes sociais durante a noite",
-    )
-    fig_pie.update_traces(
-        textinfo="percent+label",
-        hovertemplate="%{label}: %{value} (%{percent})<extra></extra>",
-    )
-    fig_pie = style_fig(fig_pie)
+    if filtered_teen.empty:
+        fig_night_academic = empty_figure(
+            "Uso noturno e desempenho acadêmico",
+            "Adicione teen_behavior_patterns.csv para exibir esta relação.",
+        )
+    else:
+        group_keys = ["country", "gender", "platform"]
+        night_groups = (
+            filtered.assign(
+                platform=lambda frame: frame["primary_platform"].replace(
+                    {"Twitter": "X/Twitter"}
+                )
+            )
+            .groupby(group_keys, as_index=False)
+            .agg(
+                night_usage_rate=("night_usage", "mean"),
+                genz_records=("night_usage", "size"),
+            )
+        )
+        academic_groups = (
+            filtered_teen.groupby(group_keys, as_index=False)
+            .agg(
+                academic_performance=(
+                    "academic_performance_score",
+                    "mean",
+                ),
+                teen_records=("academic_performance_score", "size"),
+            )
+        )
+        night_academic = night_groups.merge(
+            academic_groups,
+            on=group_keys,
+            how="inner",
+        ).assign(
+            night_usage_percent=lambda frame: frame["night_usage_rate"] * 100,
+            gender_label=lambda frame: frame["gender"].map(TRANSLATIONS),
+            records=lambda frame: frame[["genz_records", "teen_records"]].min(
+                axis=1
+            ),
+        )
+
+        if night_academic.empty:
+            fig_night_academic = empty_figure(
+                "Uso noturno e desempenho acadêmico",
+                "Não há grupos em comum entre as bases para os filtros selecionados.",
+            )
+        else:
+            night_academic_corr = night_academic["night_usage_percent"].corr(
+                night_academic["academic_performance"]
+            )
+            fig_night_academic = px.scatter(
+                night_academic,
+                x="night_usage_percent",
+                y="academic_performance",
+                color="gender_label",
+                symbol="gender_label",
+                size="records",
+                size_max=18,
+                opacity=0.75,
+                color_discrete_sequence=DISCRETE_SEQUENCE,
+                hover_data={
+                    "country": True,
+                    "platform": True,
+                    "genz_records": True,
+                    "teen_records": True,
+                    "records": False,
+                    "gender_label": False,
+                },
+                title=(
+                    "Uso noturno e desempenho acadêmico "
+                    f"(r = {night_academic_corr:.2f})"
+                ),
+                labels={
+                    "night_usage_percent": "Uso noturno médio (%)",
+                    "academic_performance": "Desempenho acadêmico médio",
+                    "gender_label": "Gênero",
+                    "country": "País",
+                    "platform": "Plataforma",
+                    "genz_records": "Registros Gen Z",
+                    "teen_records": "Registros adolescentes",
+                },
+            )
+
+            if (
+                len(night_academic) >= 2
+                and night_academic["night_usage_percent"].nunique() > 1
+            ):
+                slope, intercept = np.polyfit(
+                    night_academic["night_usage_percent"],
+                    night_academic["academic_performance"],
+                    1,
+                )
+                trend_x = np.linspace(
+                    night_academic["night_usage_percent"].min(),
+                    night_academic["night_usage_percent"].max(),
+                    100,
+                )
+                fig_night_academic.add_trace(
+                    go.Scatter(
+                        x=trend_x,
+                        y=slope * trend_x + intercept,
+                        mode="lines",
+                        name="Tendência geral",
+                        line=dict(color=COLORS["text"], dash="dash", width=2),
+                        hoverinfo="skip",
+                    )
+                )
+            fig_night_academic = style_fig(fig_night_academic)
 
     corr_columns = {
         "daily_usage_hours": "Uso diário",
@@ -626,7 +706,7 @@ def update_dashboard(countries, genders):
         insight,
         fig_scatter,
         fig_addiction,
-        fig_pie,
+        fig_night_academic,
         fig_strong,
         fig_risk,
         fig_usage_addiction_mental,
