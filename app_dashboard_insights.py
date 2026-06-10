@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from dash import Dash, Input, Output, dcc, html
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 BASE_DIR = Path(__file__).resolve().parent
 GENZ_PATH = BASE_DIR / "genz_social_media_usage_1M (1).csv"
@@ -18,7 +18,6 @@ mental = pd.read_csv(MENTAL_PATH) if MENTAL_PATH.exists() else pd.DataFrame()
 genz["addiction_level_num"] = genz["addiction_level"].map(
     {"Low": 1, "Medium": 2, "High": 3}
 )
-genz_sample = genz.sample(n=min(35000, len(genz)), random_state=42)
 
 COLORS = {
     "background": "#F6F8FB",
@@ -34,14 +33,6 @@ COLORS = {
 }
 
 PLOTLY_TEMPLATE = "plotly_white"
-DISCRETE_SEQUENCE = [
-    "#4F46E5",
-    "#06B6D4",
-    "#F97316",
-    "#10B981",
-    "#E11D48",
-    "#8B5CF6",
-]
 
 CORR_COLS = [
     "daily_usage_hours",
@@ -70,6 +61,19 @@ def normalize_for_correlation(frame, columns):
     standard_scaler = scaler.fit_transform(numeric)
     normalized = pd.DataFrame(
         standard_scaler,
+        columns=numeric.columns,
+        index=numeric.index,
+    )
+    return normalized
+
+
+def normalize_min_max(frame, columns):
+    """Normaliza as colunas no intervalo de 0 a 1."""
+    numeric = frame[columns].astype(float).copy()
+    scaler = MinMaxScaler()
+    min_max_scaler = scaler.fit_transform(numeric)
+    normalized = pd.DataFrame(
+        min_max_scaler,
         columns=numeric.columns,
         index=numeric.index,
     )
@@ -131,39 +135,28 @@ def insight_card(title, value, description, color):
 # diferentes. Os DataFrames originais permanecem intactos para os outros gráficos.
 normalized_genz = normalize_for_correlation(genz, CORR_COLS)
 
-teen_corr_columns = [
-    "year",
+teen_normalized_columns = [
     "academic_performance_score",
     "social_comparison_index",
     "body_image_anxiety_score",
     "peer_pressure_score",
-    "suicide_risk_indicator",
 ]
 normalized_teen = (
-    normalize_for_correlation(teen, teen_corr_columns)
+    normalize_min_max(teen, teen_normalized_columns)
     if not teen.empty
     else pd.DataFrame()
 )
 
-mental_corr_source = mental.copy()
-if not mental_corr_source.empty:
-    mental_corr_source["mental_health_risk_num"] = mental_corr_source[
-        "mental_health_risk"
-    ].map({"Low": 1, "Medium": 2, "High": 3})
-mental_corr_columns = [
-    "year",
+mental_normalized_columns = [
     "anxiety_score",
     "depression_score",
     "stress_level",
     "loneliness_index",
-    "therapy_access",
-    "medication_usage",
     "self_esteem_score",
-    "mental_health_risk_num",
 ]
 normalized_mental = (
-    normalize_for_correlation(mental_corr_source, mental_corr_columns)
-    if not mental_corr_source.empty
+    normalize_min_max(mental, mental_normalized_columns)
+    if not mental.empty
     else pd.DataFrame()
 )
 
@@ -177,24 +170,32 @@ min_age = int(genz["age"].min())
 max_age = int(genz["age"].max())
 teen_mental = genz.loc[genz["age"].between(13, 19), "mental_health_score"].mean()
 total_records = len(genz) + len(teen) + len(mental)
+combined_min_year = int(min(mental["year"].min(), teen["year"].min()))
+combined_max_year = int(max(mental["year"].max(), teen["year"].max()))
 
-fig_scatter = px.scatter(
-    genz_sample,
-    x="daily_usage_hours",
-    y="mental_health_score",
-    color="primary_platform",
-    size="avg_session_minutes",
-    opacity=0.42,
-    color_discrete_sequence=DISCRETE_SEQUENCE,
-    title="Uso diário de redes sociais e saúde mental",
-    labels={
-        "daily_usage_hours": "Uso diário (horas)",
-        "mental_health_score": "Pontuação de saúde mental",
-        "primary_platform": "Plataforma",
-        "avg_session_minutes": "Duração média da sessão",
-    },
+mental_counts, mental_bins = np.histogram(
+    genz["mental_health_score"],
+    bins=30,
 )
-fig_scatter = style_fig(fig_scatter)
+fig_histogram = go.Figure(
+    go.Bar(
+        x=(mental_bins[:-1] + mental_bins[1:]) / 2,
+        y=mental_counts,
+        width=np.diff(mental_bins),
+        marker_color=COLORS["primary"],
+        hovertemplate=(
+            "Saúde mental: %{x:.2f}<br>"
+            "Participantes: %{y:,}<extra></extra>"
+        ),
+    )
+)
+fig_histogram.update_layout(
+    title="Distribuição da saúde mental na Geração Z",
+    xaxis_title="Pontuação de saúde mental",
+    yaxis_title="Número de participantes",
+    bargap=0.04,
+)
+fig_histogram = style_fig(fig_histogram)
 
 fig_heatmap = px.imshow(
     corr,
@@ -219,17 +220,121 @@ fig_heatmap.update_yaxes(
 )
 fig_heatmap = style_fig(fig_heatmap)
 
+addiction_order = ["Low", "Medium", "High"]
+addiction_labels = {
+    "Low": "Baixo",
+    "Medium": "Médio",
+    "High": "Alto",
+}
+addiction_counts = (
+    genz["addiction_level"]
+    .value_counts()
+    .reindex(addiction_order, fill_value=0)
+)
+fig_addiction = go.Figure(
+    go.Bar(
+        x=[addiction_labels[level] for level in addiction_order],
+        y=addiction_counts.values,
+        marker_color=[
+            COLORS["success"],
+            COLORS["accent"],
+            COLORS["danger"],
+        ],
+        text=[f"{count:,}".replace(",", ".") for count in addiction_counts],
+        textposition="outside",
+        hovertemplate=(
+            "Nível: %{x}<br>"
+            "Participantes: %{y:,}<extra></extra>"
+        ),
+    )
+)
+fig_addiction.update_layout(
+    title="Participantes por nível de dependência",
+    xaxis_title="Nível de dependência",
+    yaxis_title="Número de participantes",
+    showlegend=False,
+)
+fig_addiction = style_fig(fig_addiction)
+
+normalized_indicator_labels = {
+    "anxiety_score": "Ansiedade",
+    "depression_score": "Depressão",
+    "stress_level": "Estresse",
+    "loneliness_index": "Solidão",
+    "self_esteem_score": "Autoestima",
+    "academic_performance_score": "Desempenho acadêmico",
+    "social_comparison_index": "Comparação social",
+    "body_image_anxiety_score": "Ansiedade com imagem corporal",
+    "peer_pressure_score": "Pressão dos pares",
+}
+normalized_boxplot_data = pd.concat(
+    [
+        normalized_mental.rename(columns=normalized_indicator_labels)
+        .melt(
+            var_name="indicator",
+            value_name="normalized_value",
+        )
+        .assign(source="Tendências de saúde mental"),
+        normalized_teen.rename(columns=normalized_indicator_labels)
+        .melt(
+            var_name="indicator",
+            value_name="normalized_value",
+        )
+        .assign(source="Comportamento adolescente"),
+    ],
+    ignore_index=True,
+)
+fig_normalized_boxplots = px.box(
+    normalized_boxplot_data,
+    x="indicator",
+    y="normalized_value",
+    color="source",
+    points=False,
+    title=(
+        "Distribuição normalizada dos indicadores de saúde e comportamento "
+        f"de {combined_min_year} a {combined_max_year}"
+    ),
+    labels={
+        "indicator": "Indicador",
+        "normalized_value": "Valor normalizado",
+        "source": "Base de dados",
+    },
+    color_discrete_map={
+        "Tendências de saúde mental": COLORS["primary"],
+        "Comportamento adolescente": COLORS["secondary"],
+    },
+)
+fig_normalized_boxplots.update_traces(
+    hovertemplate=(
+        "Indicador: %{x}<br>"
+        "Valor normalizado: %{y:.3f}<extra></extra>"
+    ),
+)
+fig_normalized_boxplots.update_layout(
+    yaxis_range=[0, 1],
+)
+fig_normalized_boxplots.update_xaxes(tickangle=-25)
+fig_normalized_boxplots = style_fig(fig_normalized_boxplots)
+
 app = Dash(__name__)
-app.title = "Insights sobre Redes Sociais e Bem-estar"
+app.title = "Panorama da Geração Z: Redes Sociais, Saúde Mental e Comportamento"
 
 app.layout = html.Div(
     children=[
         html.Div(
             children=[
                 html.P("DASHBOARD DE INSIGHTS", style={"margin": "0 0 6px", "fontWeight": "bold", "letterSpacing": "1.5px", "color": COLORS["primary"]}),
-                html.H1("Insights sobre Redes Sociais e Bem-estar", style={"margin": "0", "fontSize": "34px"}),
+                html.H1(
+                    "Panorama da Geração Z: Redes Sociais, Saúde Mental e Comportamento",
+                    style={"margin": "0", "fontSize": "34px"},
+                ),
                 html.P(
-                    "A dispersão mostra os registros individuais e o mapa resume as relações lineares entre as variáveis.",
+                    (
+                        "Uma visão integrada da distribuição da saúde mental, das "
+                        "correlações com o uso de redes sociais, dos níveis de "
+                        "dependência e dos indicadores normalizados de saúde e "
+                        "comportamento adolescente."
+                    ),
                     style={"margin": "9px 0 0", "color": COLORS["muted"], "fontSize": "16px"},
                 ),
             ],
@@ -237,7 +342,7 @@ app.layout = html.Div(
         ),
         html.Div(
             children=[
-                html.Div(dcc.Graph(figure=fig_scatter), className="chart-card"),
+                html.Div(dcc.Graph(figure=fig_histogram), className="chart-card"),
                 html.Div(dcc.Graph(figure=fig_heatmap), className="chart-card"),
             ],
             className="graphs-grid",
@@ -284,6 +389,14 @@ app.layout = html.Div(
             ],
             className="insight-grid",
         ),
+        html.Div(
+            dcc.Graph(figure=fig_addiction),
+            className="chart-card addiction-chart",
+        ),
+        html.Div(
+            dcc.Graph(figure=fig_normalized_boxplots),
+            className="chart-card normalized-boxplots-chart",
+        ),
     ],
     style={
         "minHeight": "100vh",
@@ -322,6 +435,12 @@ app.index_string = f"""
                 display: grid;
                 grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 14px;
+            }}
+            .addiction-chart {{
+                margin-top: 18px;
+            }}
+            .normalized-boxplots-chart {{
+                margin-top: 18px;
             }}
             @media (max-width: 1050px) {{
                 .graphs-grid {{ grid-template-columns: 1fr; }}
