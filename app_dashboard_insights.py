@@ -1,3 +1,14 @@
+"""Dashboard descritivo sobre uso digital, comportamento e saúde mental.
+
+A aplicação reúne três bases de dados e apresenta uma visão estática dos
+principais indicadores da Geração Z. Os gráficos resumem distribuições,
+correlações e diferenças entre métricas de comportamento adolescente e saúde
+mental.
+
+Execução:
+    python app_dashboard_insights.py
+"""
+
 from pathlib import Path
 
 import numpy as np
@@ -7,18 +18,24 @@ import plotly.graph_objects as go
 from dash import Dash, Input, Output, dcc, html
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
+# Caminhos construídos a partir da pasta do script para evitar dependência do
+# diretório em que o comando de execução foi chamado.
 BASE_DIR = Path(__file__).resolve().parent
 GENZ_PATH = BASE_DIR / "genz_social_media_usage_1M (1).csv"
 TEEN_PATH = BASE_DIR / "teen_behavior_patterns.csv"
 MENTAL_PATH = BASE_DIR / "mental_health_trends.csv"
 
+# Carregamento das três bases utilizadas pelo painel.
 genz = pd.read_csv(GENZ_PATH)
 teen = pd.read_csv(TEEN_PATH)
 mental = pd.read_csv(MENTAL_PATH)
+
+# Conversão da categoria ordinal para números, necessária para a correlação.
 genz["addiction_level_num"] = genz["addiction_level"].map(
     {"Low": 1, "Medium": 2, "High": 3}
 )
 
+# Identidade visual compartilhada por cartões e gráficos.
 COLORS = {
     "background": "#F6F8FB",
     "card": "#FFFFFF",
@@ -55,7 +72,11 @@ CORR_LABELS = {
 
 
 def normalize_for_correlation(frame, columns):
-    """Cria uma cópia padronizada sem alterar os dados usados nos gráficos."""
+    """Padroniza colunas numéricas para média zero e desvio padrão unitário.
+
+    A transformação é feita em uma cópia, preservando os dados originais que
+    alimentam os demais gráficos.
+    """
     numeric = frame[columns].astype(float).copy()
     scaler = StandardScaler()
     standard_scaler = scaler.fit_transform(numeric)
@@ -68,7 +89,7 @@ def normalize_for_correlation(frame, columns):
 
 
 def normalize_min_max(frame, columns):
-    """Normaliza as colunas no intervalo de 0 a 1."""
+    """Retorna uma cópia das colunas numéricas normalizadas entre 0 e 1."""
     numeric = frame[columns].astype(float).copy()
     scaler = MinMaxScaler()
     min_max_scaler = scaler.fit_transform(numeric)
@@ -81,6 +102,7 @@ def normalize_min_max(frame, columns):
 
 
 def correlation_strength(value):
+    """Traduz o valor absoluto de uma correlação para uma faixa descritiva."""
     absolute = abs(value)
     if np.isclose(absolute, 1.0):
         return "perfeita"
@@ -98,6 +120,7 @@ def correlation_strength(value):
 
 
 def style_fig(fig):
+    """Aplica o padrão visual do dashboard a uma figura Plotly."""
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
         paper_bgcolor=COLORS["card"],
@@ -113,6 +136,7 @@ def style_fig(fig):
 
 
 def insight_card(title, value, description, color):
+    """Cria um cartão de destaque com título, valor e texto explicativo."""
     return html.Div(
         children=[
             html.P(title, style={"margin": "0", "fontSize": "13px", "fontWeight": "bold", "color": COLORS["muted"]}),
@@ -131,6 +155,7 @@ def insight_card(title, value, description, color):
     )
 
 
+# Preparação dos indicadores
 # Cada base é normalizada separadamente porque suas linhas representam pessoas
 # diferentes. Os DataFrames originais permanecem intactos para os outros gráficos.
 normalized_genz = normalize_for_correlation(genz, CORR_COLS)
@@ -156,6 +181,7 @@ normalized_mental = (
     normalize_min_max(mental, mental_normalized_columns)
 )
 
+# Métricas resumidas exibidas no mapa de correlação e nos cartões.
 corr = normalized_genz.corr(numeric_only=True)
 usage_addiction_corr = corr.loc[
     "daily_usage_hours",
@@ -169,6 +195,7 @@ total_records = len(genz) + len(teen) + len(mental)
 combined_min_year = int(min(mental["year"].min(), teen["year"].min()))
 combined_max_year = int(max(mental["year"].max(), teen["year"].max()))
 
+# Histograma pré-agregado para evitar enviar um milhão de pontos ao navegador.
 mental_counts, mental_bins = np.histogram(
     genz["mental_health_score"],
     bins=30,
@@ -193,6 +220,7 @@ fig_histogram.update_layout(
 )
 fig_histogram = style_fig(fig_histogram)
 
+# Matriz de correlação entre hábitos digitais e indicadores de bem-estar.
 fig_heatmap = px.imshow(
     corr,
     text_auto=".2f",
@@ -216,6 +244,7 @@ fig_heatmap.update_yaxes(
 )
 fig_heatmap = style_fig(fig_heatmap)
 
+# Contagem por nível de dependência, mantendo uma ordem semântica fixa.
 addiction_order = ["Low", "Medium", "High"]
 addiction_labels = {
     "Low": "Baixo",
@@ -252,6 +281,7 @@ fig_addiction.update_layout(
 )
 fig_addiction = style_fig(fig_addiction)
 
+# Distribuição do tempo diário de uso, também resumida em 30 intervalos.
 usage_counts, usage_bins = np.histogram(
     genz["daily_usage_hours"],
     bins=30,
@@ -276,6 +306,7 @@ fig_usage_histogram.update_layout(
 )
 fig_usage_histogram = style_fig(fig_usage_histogram)
 
+# Os nomes técnicos são traduzidos antes de reunir as bases em formato longo.
 normalized_indicator_labels = {
     "anxiety_score": "Ansiedade",
     "depression_score": "Depressão",
@@ -287,6 +318,8 @@ normalized_indicator_labels = {
     "body_image_anxiety_score": "Ansiedade com imagem corporal",
     "peer_pressure_score": "Pressão dos pares",
 }
+# A escala comum de 0 a 1 permite comparar distribuições de indicadores que
+# originalmente possuem unidades e amplitudes diferentes.
 normalized_boxplot_data = pd.concat(
     [
         normalized_mental.rename(columns=normalized_indicator_labels)
@@ -336,6 +369,7 @@ fig_normalized_boxplots.update_layout(
 fig_normalized_boxplots.update_xaxes(tickangle=-25)
 fig_normalized_boxplots = style_fig(fig_normalized_boxplots)
 
+# Configuração e composição visual da aplicação.
 app = Dash(__name__)
 app.title = "Dashboard de Insights"
 
@@ -447,6 +481,7 @@ app.layout = html.Div(
     },
 )
 
+# CSS responsivo incorporado ao documento HTML servido pelo Dash.
 app.index_string = f"""
 <!DOCTYPE html>
 <html>
@@ -505,4 +540,5 @@ app.index_string = f"""
 
 
 if __name__ == "__main__":
+    # Porta distinta da aplicação interativa para permitir executar ambas juntas.
     app.run(debug=True, port=8051)

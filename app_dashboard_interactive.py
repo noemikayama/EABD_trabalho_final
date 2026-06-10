@@ -1,3 +1,13 @@
+"""Dashboard interativo sobre uso digital, comportamento e saúde mental.
+
+Os filtros de país e gênero atualizam indicadores e gráficos construídos com
+três bases de dados. A aplicação explora relações entre tempo de uso, nível de
+dependência, saúde mental, desempenho acadêmico e comportamento adolescente.
+
+Execução:
+    python app_dashboard_interactive.py
+"""
+
 from pathlib import Path
 
 import numpy as np
@@ -7,19 +17,26 @@ import plotly.graph_objects as go
 from dash import Dash, Input, Output, dcc, html
 from sklearn.preprocessing import StandardScaler
 
+# Caminhos relativos ao próprio script tornam a leitura dos CSVs independente
+# do diretório usado para iniciar a aplicação.
 BASE_DIR = Path(__file__).resolve().parent
 GENZ_PATH = BASE_DIR / "genz_social_media_usage_1M (1).csv"
 TEEN_PATH = BASE_DIR / "teen_behavior_patterns.csv"
 MENTAL_PATH = BASE_DIR / "mental_health_trends.csv"
 
+# Carregamento das bases analisadas pelo dashboard.
 genz = pd.read_csv(GENZ_PATH)
 teen = pd.read_csv(TEEN_PATH)
 mental = pd.read_csv(MENTAL_PATH)
+
+# Colunas auxiliares usadas em legendas, correlações e eixos categóricos.
 genz["night_usage_label"] = np.where(
     genz["night_usage"] == 1,
     "Usa à noite",
     "Não usa à noite",
 )
+# A amostra reduz o custo de renderização do gráfico de dispersão sem alterar
+# os cálculos dos KPIs e das correlações, que continuam usando a base completa.
 genz_sample = genz.sample(n=min(35000, len(genz)), random_state=42)
 
 genz["addiction_level_num"] = genz["addiction_level"].map(
@@ -29,6 +46,7 @@ mental["mental_health_risk_num"] = mental["mental_health_risk"].map(
     {"Low": 1, "Medium": 2, "High": 3}
 )
 
+# Identidade visual compartilhada pelos componentes da aplicação.
 COLORS = {
     "background": "#F6F8FB",
     "card": "#FFFFFF",
@@ -67,6 +85,7 @@ TRANSLATIONS = {
 
 
 def options_from(series):
+    """Converte valores de uma coluna em opções traduzidas para um Dropdown."""
     values = sorted(series.unique())
     return [
         {"label": TRANSLATIONS.get(value, str(value)), "value": value}
@@ -75,6 +94,7 @@ def options_from(series):
 
 
 def filter_genz(countries, genders, platforms, source=None):
+    """Filtra a base Gen Z, ou uma amostra dela, por país e gênero."""
     filtered = genz if source is None else source
     if countries:
         filtered = filtered[filtered["country"].isin(countries)]
@@ -84,6 +104,7 @@ def filter_genz(countries, genders, platforms, source=None):
 
 
 def filter_teen(countries, genders, platforms):
+    """Filtra os dados de comportamento adolescente por país e gênero."""
     if teen.empty:
         return teen
     filtered = teen
@@ -95,6 +116,7 @@ def filter_teen(countries, genders, platforms):
 
 
 def filter_mental(countries, genders):
+    """Filtra a base de tendências de saúde mental por país e gênero."""
     if mental.empty:
         return mental
     filtered = mental
@@ -106,6 +128,7 @@ def filter_mental(countries, genders):
 
 
 def normalize_for_correlation(frame, columns):
+    """Padroniza colunas numéricas sem modificar o DataFrame de origem."""
     numeric = frame[columns].astype(float).copy()
     scaler = StandardScaler()
     standard_scaler = scaler.fit_transform(numeric)
@@ -118,6 +141,7 @@ def normalize_for_correlation(frame, columns):
 
 
 def style_fig(fig):
+    """Aplica cores, fontes, margens e grades padronizadas a uma figura."""
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
         paper_bgcolor=COLORS["card"],
@@ -133,6 +157,7 @@ def style_fig(fig):
 
 
 def empty_figure(title, message="Não há dados disponíveis para os filtros selecionados."):
+    """Cria um gráfico vazio com uma mensagem contextual para o usuário."""
     fig = go.Figure()
     fig.update_layout(
         title=title,
@@ -155,6 +180,7 @@ def empty_figure(title, message="Não há dados disponíveis para os filtros sel
 
 
 def kpi_card(title, value, subtitle, color):
+    """Monta um cartão de KPI com valor, descrição e cor de destaque."""
     return html.Div(
         children=[
             html.P(title, style={"margin": "0", "fontSize": "13px", "color": COLORS["muted"]}),
@@ -172,6 +198,7 @@ def kpi_card(title, value, subtitle, color):
     )
 
 
+# Configuração e composição visual da aplicação.
 app = Dash(__name__)
 app.title = "Dashboard Interativo"
 
@@ -289,6 +316,7 @@ app.layout = html.Div(
     },
 )
 
+# CSS responsivo incorporado ao HTML principal servido pelo Dash.
 app.index_string = f"""
 <!DOCTYPE html>
 <html>
@@ -349,6 +377,12 @@ app.index_string = f"""
     Input("gender-filter", "value"),
 )
 def update_dashboard(countries, genders):
+    """Atualiza KPIs, insight textual e gráficos conforme os filtros.
+
+    Os filtros são aplicados separadamente às três bases. Quando um gráfico
+    combina fontes diferentes, os registros são agregados por dimensões em
+    comum, evitando associar diretamente indivíduos sem uma chave compartilhada.
+    """
     filtered = filter_genz(countries, genders, None)
     filtered_teen = filter_teen(countries, genders, None)
     filtered_mental = filter_mental(countries, genders)
@@ -366,6 +400,7 @@ def update_dashboard(countries, genders):
             empty,
         )
 
+    # Indicadores gerais calculados sobre todos os registros selecionados.
     avg_usage = filtered["daily_usage_hours"].mean()
     avg_mental = filtered["mental_health_score"].mean()
     night_share = filtered["night_usage"].mean() * 100
@@ -377,6 +412,7 @@ def update_dashboard(countries, genders):
         kpi_card("Tela antes de dormir", f"{avg_sleep:.1f} min", "Tempo médio antes de dormir", COLORS["secondary"]),
     ]
 
+    # Correlações internas da base Gen Z para o recorte selecionado.
     genz_correlation_columns = [
         "daily_usage_hours",
         "addiction_level_num",
@@ -413,6 +449,7 @@ def update_dashboard(countries, genders):
         ]
     )
 
+    # Dispersão baseada em amostra para manter a interação fluida.
     sample = filter_genz(countries, genders, None, source=genz_sample)
     fig_scatter = px.scatter(
         sample,
@@ -451,6 +488,8 @@ def update_dashboard(countries, genders):
     )
     fig_addiction = style_fig(fig_addiction)
 
+    # Relação entre bases: as médias são combinadas apenas depois da agregação
+    # por país, gênero e plataforma, dimensões compartilhadas pelos dois CSVs.
     if filtered_teen.empty:
         fig_night_academic = empty_figure(
             "Uso noturno e desempenho acadêmico",
@@ -534,6 +573,7 @@ def update_dashboard(countries, genders):
                 },
             )
 
+            # Linha de tendência linear calculada para todos os grupos visíveis.
             if (
                 len(night_academic) >= 2
                 and night_academic["night_usage_percent"].nunique() > 1
@@ -560,6 +600,7 @@ def update_dashboard(countries, genders):
                 )
             fig_night_academic = style_fig(fig_night_academic)
 
+    # Mapa completo das correlações entre as variáveis numéricas da base Gen Z.
     corr_columns = {
         "daily_usage_hours": "Uso diário",
         "addiction_level_num": "Nível de dependência",
@@ -587,6 +628,8 @@ def update_dashboard(countries, genders):
     fig_strong.update_xaxes(tickangle=-30)
     fig_strong = style_fig(fig_strong)
 
+    # Média do indicador binário: ao multiplicar por 100, obtém-se a proporção
+    # percentual de registros sinalizados em cada plataforma.
     if filtered_teen.empty or "suicide_risk_indicator" not in filtered_teen:
         fig_risk = empty_figure(
             "Indicador de risco de suicídio (%) por plataforma",
@@ -620,6 +663,8 @@ def update_dashboard(countries, genders):
         fig_risk.update_layout(coloraxis_showscale=False)
         fig_risk = style_fig(fig_risk)
 
+    # A ansiedade média da base de saúde mental é agregada pelas chaves comuns e
+    # associada a uma amostra Gen Z para contextualizar uso e dependência.
     if filtered_mental.empty:
         fig_usage_addiction_mental = empty_figure(
             "Uso, dependência e indicadores de saúde mental"
@@ -731,4 +776,5 @@ def update_dashboard(countries, genders):
 
 
 if __name__ == "__main__":
+    # O modo debug recarrega o servidor automaticamente durante o desenvolvimento.
     app.run(debug=True)
